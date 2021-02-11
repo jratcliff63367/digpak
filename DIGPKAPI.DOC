@@ -1,0 +1,840 @@
+
+			 Version 3.3 DigPak
+
+			     written by
+
+			  John W. Ratcliff
+
+Includes one set of sources that works in all memory models.  Full
+MIDPAK compatible support.
+
+The set of digitized sound drivers hook into user interrupt vector 66h
+to provide a clean clear programmers interface. This document describes
+the two ways you can access the digitized sound package.  The first is
+the interrupt level interface.	The second is a link library interface
+that provides a set of C or assembly language callable functions to
+access not only the digitized sound drivers but also provides usefull
+support routines.  These glue code functions are located in the source
+file DIGPLAY.ASM.
+
+	************** VERSION 3.1 CHANGES ***************
+
+int far *ReportPendingAddress(void); // Reports the far address of the pending
+// flag.	If this memory location pointed to by this address is 1 that means
+// a pending sound effect is still pending.  When this becomes zero, then your
+// application software can post the next piece of audio to play.  It is
+// preferable to use this semaphore to know when to post the next buffer
+// rather than to use the AudioPendingStatus call.
+
+int far *ReportSemaphoreAddress(void); // Reports the far address of the DigPak
+// semaphore.  If this semaphore is true, then DigPak is currently active
+// and you shouldn't post any DigPak calls.  This is EXTREMELY important if
+// you are trying to invoke DigPak functions via a hardware interrupt, where
+// you could potentially have interrupted DigPak itself.
+
+void far StopNextLoop(void); // If a digital sound sample is looping,
+// this call will cause it to stop looping, the next time it has
+// finished.
+
+int far ReportVersionNumber(void); // Report the DigPak version number.
+// Return code is times 100, meaning that version 3.1 would be returned
+// as the decimal number 310.  This function wasn't supported prior to
+// version 3.1 release, so it will be returned as 0, for versions prior
+// to 3.1.
+
+	**************************************************
+
+
+***********************************************************************
+*************** INT 66h Interface Specification ***********************
+***********************************************************************
+
+When invoking digplay functions to play sound you pass the address of
+a sound structure (SNDSTRUC) that contains the basic information
+describing the sound effect you wish to play.
+
+
+typedef struct
+{
+	unsigned char far *sound; // Far address of audio data.
+	unsigned int	 sndlen;  // Length of audio sample.
+	int far *IsPlaying;	  // Address of play status flag.
+	int	frequency;	  // Playback frequency.
+} SNDSTRUC;
+
+********* DIGPAK functions ************************************
+
+Function #1: DigPlay, Play an 8 bit digitized sound.
+
+	INPUT:	AX = 688h    Command number.
+		DS:SI	     Point to a sound structure that
+			     describes the sound effect to be played.
+
+Function #2: SoundStatus, Check current status of sound driver.
+	      and report VERSION number of the driver, 3.1 and later.
+
+	INPUT:	AX = 689h
+	OUTPUT: AX = 0	     No sound is playing.
+		   = 1	     Sound effect currently playing.
+		DX = 0	     No sound is looping.
+		   = 1	     A sound effect is looping.
+		BX = version Starting with version 3.1, the BX register
+			     of the SoundStatus call will return the
+			     version number.  The version number is in
+			     decimal, and multiplied times 100.  Meaning
+			     a return of 310, is equal to version 3.10.
+			     Versions before 3.1, did not set the BX
+			     register to anything, so you should zero
+			     out the BX register before you check the
+			     version number.  If the BX register is still
+			     zero, then the DigPak driver loaded is less
+			     than 3.1.
+
+
+Function #3: MassageAudio, Preformat audio data into ouptut hardware format.
+
+	INPUT:	AX = 68Ah
+		DS:SI	     Point to address of sound structure.
+
+Function #4: DigPlay2, Play preformatted audio data.
+
+	INPUT:	AX = 68Bh
+		DS:SI	     Point to address of sound structure.
+
+Function #5: AudioCapabilities, Report capabilities of hardware device.
+
+	INPUT:	AX = 68Ch
+	OUTPU:	AX = Bit 0 -> On, supports background playback.
+			      Off, driver only plays as a foreground process.
+		     Bit 1 -> On, source data is reformatted for output device.
+			       Off, device handles raw 8 bit unsigned audio.
+		     Bit 2 -> On, Device plays back at a fixed frequency, but
+				  the audio driver will downsample input data
+				  to fit.
+			      Off, device plays back at user specified frequency.
+			      (NOTE: You can still playback an audio sample at
+				     whatever frequency you wish.  The driver
+				     will simply downsample the data to fit
+				     the output hardware.  Currently it does
+				     not support upsampling though.)
+		     Bit 3 -> On, this device uses the timer interrupt vector
+			      during sound playback.
+		     Bit 4 -> Driver supports timer sharing.
+		     Bit 5 -> Supports looped sounds and pending.
+		     Bit 6 -> Supports stereo panning.
+		     Bit 7 -> Supports 8 bit PCM stereo playback.
+		     Bit 8 -> Supports audio recording.
+		     Bit 9 -> supports DMA backfilling.
+
+		DX = If this device plays back at a fixed frequency the DX
+		     register will contain that fixed frequency playback rate.
+
+Function #6: ReportSample, Report current playback address. UNSUPPORTED CALL
+		THIS FUNCTION CALL WAS DESIGNED BUT NOT ABLE TO BE IMPLEMENTED
+		FOR ALL DRIVERS!!
+
+	INPUT:	AX = 68Dh
+	OUTPUT: AX = Current playback address. UNSUPPORTED FUNCTION CALL!!!
+
+
+Function #7: SetCallBackAddress, sets a user's sound completion
+		     callback addess.
+
+	INPUT: AX = 068Eh
+	       BX = Offset portion of far procedure to callback.
+	       DX = Segment portion of far procedure to callback.
+	       DS = Data Segment register value to load at callback time.
+	OUTPUT: None.
+
+	       This function allows the user to specify a callback
+	       address of a far procedure to be invoked when a sound
+	       effect has completed being played.  This function is
+	       disabled by default.  Sending a valid address to this
+	       function will cause a callback to occur whenever a sound
+	       sample has completed being played.  The callers DS register
+	       will be loaded for him at callback time.  Be very careful
+	       when using this feature.  The application callback procedure
+	       is being invoked typically during a hardware interupt.
+	       Your application should spend a small an amount of time
+	       as possible during this callback.  Remember that the
+	       callback must be a far procedure.  The sound driver
+	       preserves ALL registers so your callback function does
+	       not need to do so.  Do not perform any DOS functions
+	       during callback time because DOS is not re-entrent.
+	       Keep in mind that your own application has been interupted
+	       by the hardware it this point.  Be very careful when making
+	       assumptions about the state of your application during
+	       callback time.  Hardware callbacks are generally used
+	       to communicate sound event information to the application
+	       or to perform a technique called double-buffering, whereby
+	       your application immediatly posts another sound effect to
+	       be played at the exact time that the last sound effect
+	       has completed.
+
+	       WARNING!!! Be sure to turn off hardware callbacks when
+	       your application leaves!!! Otherwise, harware callbacks
+	       will be pointing off into memory that no longer contains
+	       code.  This function is for advanced programmers only.
+
+Function #8: StopSound, stop currently playing sound.
+
+	INPUT: AX = 68Fh
+	OUTPUT: None.
+
+	      Will cause any currently playing sound effect to be
+	      terminated.
+
+
+Function #9: SetAudioHardware, set up hardware information. UNSUPPORTED
+	FUNCTION CALL!!!!!!
+
+	This function is not available.  A new method is now
+	available for reconfiguring the hardware setup for
+	any driver.  Every driver is a file on disk, in .COM
+	format.  At byte locations 106h, 108h, and 10Ah, you
+	will find the following values:
+
+		Base Hardware Address: 106h offset in file.
+		IRQ:		       108h
+		Other (dma channel):   10Ah
+
+	If any of these three locations contain a -1, then that
+	value cannot be reconfigured.  If all three contain a -1,
+	then nothing can be reconfigured for this driver.  Otherwise
+	it contains the default value for this driver.	Your setup
+	program can poke new values into these locations, according
+	to the configuration information provided by the user.
+
+
+FUNCTION #10: ReportCallbackAddress
+
+	INPUT: AX = 691h
+	OUTPUT: AX:DX -> far pointer to current callback address.
+		BX -> original caller's DS register.
+
+	This function should probably never need to be used by your
+	application software.  It is provided because the MIDPAK,
+	MIDI driver, needs to revector hardware callbacks so that
+	it can handle hardware contention problems between digitized
+	sound playback and synthesized sound playback.
+
+FUNCTION #11: RestoreHardware NOT TO BE USED BY APPLICATION SOFTWARE!!!
+
+	INPUT: AX = 692h
+	OUTPUT:
+
+	      Put hardware back to initial state.  Invoked by the
+	      DeInstall code.  Not to be called by an application program!
+
+FUNCTION #12: SetTimerDivsorRate
+
+	INPUT: AX = 693h
+	       DX = Countdown timer divisor rate, so that timer based
+		    drivers can service application timer interrupts
+		    at their previous rate.  Service rate will be an
+		    aproximation, that is fairly close.  To reset timer
+		    divisor to default of 18.2 pass a 0 in the DX register.
+		    WARNING!!! If you make use of timer sharing, be sure
+		    to reset it back to the normal 18.2 time per second
+		    rate when you exit.
+
+FUNCTION #13: DigPlayLoop (not a MIDPAK compatible function)
+		This function is in beta form, for version 2.1 release.
+
+	INPUT: AX = 694h
+	       DS:SI ->sound structure, preformated data.
+
+FUNCTION #14: PostAudioPending
+
+	INPUT: AX = 695h
+	       DS:SI -> sound structure, preformated data.
+
+	OUTPUT: AX = 0	Sound was started playing.
+		AX = 1	Sound was posted as pending to play.
+		AX = 2	Already a sound effect pending, this one not posted.
+
+FUNCTION #15: AudioPendingStatus
+
+	INPUT:	AX = 696h
+
+	OUTPUT: AX = 0 No sound is playing.
+		AX = 1 Sound playing, sound pending.
+		AX = 2 Sound playing, no sound pending.
+
+FUNCTION #16: SetStereoPan
+
+	 INPUT: AX = 697h
+		DX = stereo pan value. 0 full volume right.
+				      64 full volume both.
+				     127 full volume left.
+       OUTPUT: AX = 0 command ignored, driver doesn't support stereo panning.
+	       AX = 1 pan set.
+
+
+ FUNCTION #17: SetPlayMode
+
+	 INPUT: AX = 698h
+		DX = Play Mode function.
+			DX = 0 -> 8 bit PCM
+			   = 1 -> 8 bit Stereo PCM (left/right)
+			   = 2 -> 16 bit PCM
+			   = 3 -> 16 bit PCM stereo
+
+		Once the play mode has been changed, all DigPak functions
+		work exactly the same as before but expect data passed as
+		specified by this play mode.  8 bit PCM Stereo has left/right
+		channel pairs.	Supported by Stereo FX card and Sound Blaster
+		Pro.
+
+       OUTPUT: AX = 1 -> mode set.
+	       AX = 0 -> mode not supported by this driver.
+
+FUNCTION #18:	Report Pending Status Flag adddress and Semaphore address.
+
+	int far *ReportPendingAddress(void);
+	Reports the far address of the pending flag.  If this memory location
+	pointed to by this address is 1 that means a pending sound effect is
+	still pending.	When this becomes zero, then your application software
+	can post the next piece of audio to play.  It is preferable to use this
+	semaphore to know when to post the next buffer rather than to use the
+	AudioPendingStatus call.
+
+	int far *ReportSemaphoreAddress(void);
+
+	Report the address of the DigPak semaphore.  This returns a far
+	address to a word location inside DigPak.  When this is true,
+	then DigPak is currently active, and you shouldn't invoke any
+	DigPak function from a hardware interrupt at this time.
+
+	INPUT: AX=699h
+	OUTPUT: AX:DX -> form far Address of Pending status flag.
+		BX:DX -> form far address of digpak semaphore
+
+ FUNCTION #19: Set audio recording mode.
+
+	 INPUT: AX = 69Ah
+		DX = 0 turn audio recording ON.
+		   = 1 turn audio recording OFF.
+
+       OUTPUT: AX = 0 sound driver doesn't support audio recording.
+	       AX = 1 audio recording mode is set.
+
+FUNCTION #20:	StopNextLoop
+
+	INPUT:	AX = 69Bh
+	OUTPUT: NOTHING
+
+		If the DigPak driver is currently looping a sound
+		effect, then that loop will be cancelled, the next time
+		around.
+
+ FUNCTION #21: Set DMA back fill mode.
+
+	 INPUT: AX = 69Ch
+		DX = backfill mode 0 means turn it off.
+		     and a 1 means to turn it off.
+
+	 OUTPUT: AX = 1 -> back fill mode set.
+		      0 -> driver doesn't support DMA backfill.
+
+
+ FUNCTION #22: Report current DMAC count.
+
+	 INPUT: AX = 69Dh
+
+	 OUTPUT: AX = Current DMAC count.
+
+
+ FUNCTION #23: Verify DMA block, check to see if it crosses a 64k page
+	       boundary for the user.
+
+	 INPUT: AX = 69Eh
+		ES:BX -> address of sound.
+		CX    -> length of sound effect.
+
+	 OUTPUT: AX = 1 Block is ok, DOESN'T cross 64k bounadary.
+		 AX = 0 block failed, DOES cross 64k boundary.
+
+ FUNCTION #24: Set PCM volume.
+
+	 INPUT: AX = 69Fh
+		BX = Left channel volume (or both if mono) 0-100
+		CX = Right channel volume (or both if mono) 0-100
+
+	 OUTPUT: AX = 1 Volume set
+		 AX = 0 Device doesn't support volume setting.
+
+
+***********************************************************************
+** DigPlay, linkable interface to the Digitized Sound Package.	  *****
+***********************************************************************
+The file DIGPLAY.ASM is a small assembly language source file that
+provides C compatible procedure calls to hook into the Digitized
+Sound Package.	DIGPLAY.ASM uses one include file called PROLOGUE.MAC.
+This is a macro header file that defines some basic useful assembly
+language macros.
+
+DIGPLAY.ASM is written in Turbo Assebmler's IDEAL mode.  The MASM syntax
+for 8086 assembler is abhorent.  The Turbo Assembler IDEAL mode offers
+true local labels, real data structures, typecasting, automatic argument
+passing, and local memory allocation. Turbo Assembler in IDEAL mode
+provides many of the features of a high-level langauge.  Turbo Assembler
+and Turbo Debugger combined are without question the most powerful
+assembly language tools available for any 8086 programmer.  The last I
+checked, Turbo Assembler and Turbo Debugger sold for less than $99.
+Recently Microsoft released a new version of MASM that finally provides
+some of the features that Turbo Assembler has had for over three years;
+and requires a new assembly language syntax.  For these reasons I can
+no longer consider MASM the standard for 8086 DOS based assemblers and
+that it why you will find all assembly language source code here
+provided in Turbo Assembler IDEAL mode format.	If you do not have
+Turbo Assembler simply link to one of the two following object modules.
+
+All these link layer procedures are defined as far calls and accept far
+addresses for all pointers passed.  The reason for this is so that you
+can link to one object module regardless of the memory model you are
+working in.
+
+The C prototype header file for DigPlay support functions are as follows:
+
+
+#ifndef LOADABLE_DRIVERS
+#define LOADABLE_DRIVERS 1 // Conditional compilation, set to true if
+													 // Supporting loadable drivers.
+#endif
+
+/* Bit flags to denote audio driver capabilities. */
+/* returned by the AudioCapabilities call.				*/
+#define PLAYBACK 1    // Bit zero true if can play audio in the background.
+#define MASSAGE  2    // Bit one is true if data is massaged.
+#define FIXEDFREQ 4   // Bit two is true if driver plays at fixed frequency.
+#define USESTIMER 8   // Bit three is true, if driver uses timer.
+#define SHARESTIMER 16 // Bit 4, timer can be shared (BETA!!!!!)
+#define LOOPEND 32		// bit 5, support looped samples, and pending sounds (BETA!!!)
+#define STEREOPAN 64	// Bit 6, supports stereo panning.
+#define STEREOPLAY 128 // Bit 7, supports 8 bit PCM stereo playback.
+#define AUDIORECORD 256 // Bit 8, supports audio recording!
+
+typedef struct
+{
+  char far *sound;     // address of audio data.
+  unsigned int sndlen; // Length of audio sample.
+  int far  *IsPlaying; // Address of play status flag.
+  int	   frequency;  // Playback frequency.
+} SNDSTRUC;
+
+int  far DigPlay(SNDSTRUC far *sndplay); // 688h -> Play 8 bit digitized sound.
+int  far SoundStatus(void);  // 689h -> Report sound driver status.
+void far MassageAudio(SNDSTRUC far *sndplay); // 68Ah -> Preformat 8 bit digitized sound.
+void far DigPlay2(SNDSTRUC far *sndplay); // 68Bh -> Play preformatted data.
+int  far AudioCapabilities(void); // 68Ch -> Report audio driver capabilities.
+int  far DigPakIdentityString(char far *str); // 68Ch -> reports ID string of
+					      // sound driver. returns string length.
+int  far ReportSample(void); // 68Dh -> Report current sample address.
+void far SetCallBackAddress(void far *proc); // 68Eh -> Set procedure callback address.
+void far StopSound(void); // 68Fh -> Stop current sound from playing.
+void far *far ReportCallbackAddress(void); // 691h -> report current callback address.
+void far DigPlayLoop(SNDSTRUC far *sndplay);
+int  far PostAudioPending(SNDSTRUC far *sndplay);
+
+#define NOTPLAYING 0  // No sound is playing.
+#define PLAYINGNOTPENDING 1 // Playing a sound, but no sound is pending.
+#define PENDINGSOUND 2			// Playing, and a sound is pending.
+int  far AudioPendingStatus(void);
+
+#define FULLRIGHT 0
+#define FULLLEFT 127
+#define FRONTANDCENTER 64
+int far SetStereoPan(int panvalue); // 0-127, 0 full right.
+																		//			 64 full volume both.
+																		//			127 full volume left.
+
+
+#define PCM_8_MONO 0
+#define PCM_8_STEREO 1
+#define PCM_16_MONO 2
+#define PCM_16_STEREO 3
+int far SetPlayMode(int playmode);
+// Return 0 if mode not available, 1 if mode set.
+
+int far SetRecordMode(int mode); // Set audio recording mode.
+
+int far *ReportPendingAddress(void); // Reports the far address of the pending
+// flag.	If this memory location pointed to by this address is 1 that means
+// a pending sound effect is still pending.  When this becomes zero, then your
+// application software can post the next piece of audio to play.  It is
+// preferable to use this semaphore to know when to post the next buffer
+// rather than to use the AudioPendingStatus call.
+
+void far SetTimerDivisorRate(int rate); // Set the 8253 timer divisor rate.
+// If your program, has reprogrammed the 8253 timer to another rate, then
+// you must be sure to tell DigPak what that reprogrammed rate it.  Be
+// sure to set this BACK to zero when your program exits!!!
+
+int far *ReportSemaphoreAddress(void); // Reports the far address of the DigPak
+// semaphore.  If this semaphore is true, then DigPak is currently active
+// and you shouldn't post any DigPak calls.  This is EXTREMELY important if
+// you are trying to invoke DigPak functions via a hardware interrupt, where
+// you could potentially have interrupted DigPak itself.
+
+void far StopNextLoop(void); // If a digital sound sample is looping,
+// this call will cause it to stop looping, the next time it has
+// finished.
+
+int far ReportVersionNumber(void); // Report the DigPak version number.
+// Return code is times 100, meaning that version 3.1 would be returned
+// as the decimal number 310.  This function wasn't supported prior to
+// version 3.1 release, so it will be returned as 0, for versions prior
+// to 3.1.
+
+/* Support routines */
+void far WaitSound(void); // Wait until sound playback completed.
+int  far CheckIn(void);   // Is sound driver available? 0 no, 1 yes.
+
+/******************************************************************************/
+/* Warning, it you enable LOADABLE_DRIVERS you must prodivde memory allocation*/
+/* functions, and access to DOSCALLS.OBJ.				      */
+/******************************************************************************/
+#if LOADABLE_DRIVERS
+int  far LoadSoundDriver(char far *name);  // Load a sound driver by filename, 1 success 0 fail.
+void far UnloadSoundDriver(void); // Unload a previously loaded sound driver.
+#endif
+
+
+
+		DIGPAK v2.0 README
+		      2-23-92
+		__________________
+
+This README.DOC file documents the changes for DIGPAK v2.0.
+
+	1.  Addition of the .ABX, Extended ACOMP File Format.
+
+	2.  Improved support of all memory models.
+
+	3.  Addition of DIGPAK API Functions #9 & #10.
+		Other changes in the DIGPAK API Functions.
+
+	4.  Provision of automatic detection of hardware 
+		settings in SBLASTER.COM.
+
+	5.  Discussion of DOSCALL support routines.
+
+	6.  Sound Board support in the DIGPAK API.
+		(Media Vision ProAudio Spectrum now supported!)
+
+	7.  DIGPAK Version Log.
+
+____________________________________________
+1)
+	THE .ABX, EXTENDED ACOMP FILE FORMAT
+	------------------------------------
+
+The new, extended ACOMP file format was developed as a result of user
+request for an ACOMP file format without a size limitation.  In essence,
+the .ABX file format is a collection of .ABT frames with a defining header, 
+as follows:
+
+	The .ABX File Format Header
+	---------------------------
+
+  Bytes 0-1: int  TotalFrames;		Total number of ACOMP frames in file.
+  Bytes 2-5: long int TotalSize;	Total size of original source file.
+  Bytes 6-7: unsigned int bufsize;	Frame buffer size used to compress in.
+  Bytes 8-9: unsigned int freq;    	Playback frequency of audio file.
+   ....   ABH HEADERS[TotalFrames] 	Array of headers detailing the .ABT
+					frames, where each header is as follows:
+
+  typedef struct
+  {
+    long int fileaddress; 	  // Address in file of this audio section.
+    unsigned int fsize;		  // compressed file size.
+    unsigned int usize;		  // uncompressed file size.
+  } ABH;
+
+
+Following is the diagram of a .ABX file with 3 .ABT Frames.
+
+	| ABX header/ABH/ABH/ABH | ABT frame | ABT frame | ABT frame |
+		      |___|___|________|	   |	       |	
+			  |___|____________________|	       |
+			      |________________________________|
+
+See PLAYFILE.C for an example of double buffering (simultaneous play and
+fetch) of a .ABX file.
+
+
+	NEW ACOMP OPTIONS
+	-----------------
+
+The ACOMP utility also has 2 new switches as follows:
+
+	/v 	 - Normalize volume of input data.
+	/b<size> - ACOMP compression buffer size in K bytes.
+		   Valid range is 1 - 64.  Default is 64.
+		   ACOMP will compress audio data in the ABX
+		   file format in <size> frames.
+
+
+______________________________________________
+2)
+	IMPROVED SUPPORT OF ALL MEMORY MODELS
+	-------------------------------------
+
+In DIGPAK v2.0 all routines have been rewritten using FAR pointers
+where applicable.  As a result, there no longer are different .OBJs 
+required for different memory models.  
+See DIGPAK.DOC in \THEAUDIO\DIGSRC for more details.
+
+
+_________________________________________________
+3)
+	ADDITION OF DIGPAK API FUNCTIONS #9 & #10
+	-----------------------------------------
+
+The follwing details the new DIGPAK API Functions.
+See \THEAUDIO\DIGSRC\DIGPAK.DOC for complete details.
+
+
+Function #9: SetAudioHardware - Set hardware parameters.
+-----------------------------
+  FUNCTION #9 IS NOT 100% RELIABLE IN V2.0 OF DIGPAK.  
+  SEE DISCUSSION OF AUTO-DETECTION IN THE FOLLOWING SECTION.
+
+	INPUT: AX = 690h
+	       BX = IRQ if device needs one set.
+	       CX = BASE I/O Address, if device needs one set.
+	       DX = OTHER, some other possible information the hardware 
+			might need.
+
+	OUTPUT: NONE.
+
+	Certain harware can be reconfigured to different IRQ and base
+	address settings.  This function call allows the application
+	programmer to overide these default settings.  The interpretation
+	of these parameters might change from driver to driver.  Currently
+	only the SBLASTER.COM (Creative Labs SoundBlaster) driver can be
+	reconfigured.
+
+
+FUNCTION #10: ReportCallbackAddress
+-----------------------------------
+
+	INPUT: AX = 691h
+
+	OUTPUT: AX:DX -> far pointer to current callback address.
+		BX -> original caller's DS register.
+
+	This function should probably never need to be used by your
+	application software.  It is provided because the MIDPAK,
+	MIDI driver, needs to revector hardware callbacks so that
+	it can handle hardware contention problems between digitized
+	sound playback and synthesized sound playback.
+
+
+OTHER CHANGES TO THE DIGPAK API FUNCTIONS
+-----------------------------------------
+The following are changes and additions to the existing DIGPAK API.
+
+
+	FUNCTION #5 AudioCapabilities
+	-----------------------------
+	Bit 3 - ON  => Timer is used by the loaded driver.
+		OFF => Timer is not used by the loaded driver.
+
+
+_______________________________________________
+4)
+	PROVISION OF AUTO-DETECTION OF HW SETTINGS IN SBLASTER.COM
+	----------------------------------------------------------
+
+DIGPAK driver SBLASTER.COM now includes functionality to automatically
+detect the IRQ and I/O address set on the SoundBlaster sound board.
+These settings are detected at driver load time, after which they are
+utilized.
+
+
+_______________________________________________
+5)
+	DISCUSSION OF DOSCALLS SUPPORT ROUTINES
+	---------------------------------------
+
+The DOSCALLS support routines are provided as an efficient set of
+library routines for file, disk, screen, and memory management functions.  
+DOSCALLS is a linkable object module that provides many of the functions 
+available through the standard C libraries.  There are number of reasons 
+to use DOSCALLS.OBJ rather than C library function calls.
+
+	1. Portability:	These functions work the same regardless of what
+			C compiler you are using.
+									      
+	2. Size:	These functions are extremely small compared to      
+			equivalent C library functions. The C library	      
+			functions are general while the DOSCALLS	      
+			function calls are very specific.  Accessing C       
+			library function calls causes large amounts of       
+			library code to get drug in that you probably	      
+			don't want.                                          
+								      
+	 3. TSR capability: If you program TSR's you will find that           
+			dragging in C library functions will kill you	      
+			for a whole number of reasons.  Using		      
+			DOSCALLS.OBJ you have no DGROUP dependencies and     
+			you can easily write single segment TSR's and        
+			even write both COM modules and DOS device	      
+			drivers.					      
+									      
+	 4. Assembly language:	If you don't program in C and need basic      
+			DOS support functions, you can just use DOSCALLS     
+			for this purpose.				      
+								      
+	 5. Simplicity: DOSCALLS don't ignore the fact that you are programming
+			on an MS-DOS machine.	They in fact simply provide 
+			C callable access to INT 21h calls.  Because of this 
+			they are all easy to use.			      
+
+	DOSCALL FUNCTIONS
+	-----------------
+	File Functions
+	--------------
+	mfopen		Do a DOS file open.  Returns a DOS file handle.
+	mfclose		Close a file that was opened with mfopen.
+	mfpos	 	Report current file position of the specified file.
+	mfseek		Seek file to the specified position.
+	mfread		Read from file, into address, for length of size.
+	mfwrite		Write data to file, from address, for length of size.
+	mdelete		Delete a file by filename.
+	fload		Allocate memory and read in entire file.
+	floadpara	A special version of fload, that reads the file into
+			allocated memory, but forces it to a paragraph boundary.
+	CurrentPath	Get the full, current path including drive letter.
+	LoadPath	Get the drive and directory we loaded from.
+	FindFile	Find a file by specification.
+	ChangeDirectory	Change to the specified drive and directory.
+
+	Keyboard Functions
+	------------------
+	keystat		Report DOS key status.
+	getkey		DOS getkey function. Returns keypress pending.
+			Extended key codes returned by getkey:
+			--------------------------------------
+			TAB	STAB	HOME	F1	F6
+			ENTER 	LEFT	PGUP	F2	F7
+			ESCAPE	RIGHT	END	F3	F8
+			SPACE 	UP	DOWN	F4	F9
+			BKSPACE	DOWN		F5	F10
+
+	String Functions
+	----------------
+	farcop		String copy routine using far pointers.
+	farcat		String concatenate routine using far pointers.
+	farlen		Return length of string using far pointers.
+	farcompare	String compare using far pointers.
+	ucase		Upper case a string using far pointers.
+
+	Memory Functions
+	----------------
+	fmalloc		DOS memory allocation.  Works fine by itself but 
+			conflicts with C compiler's far memory allocation.
+	ffree		Free dos allocated memory.
+			all of the printf library code, which is HUGE!
+	fmov		Memory move using far pointers.
+
+	Text Output Functions
+	---------------------		
+	tprint		Text print specifying color.
+	tcolor		Change text background color.
+	TextCursor	Position text cursor.
+
+	Timer INT Functions
+	-------------------
+	GetTimerInterruptVector	  Reports the current far address of the 
+				  timer interrupt vector.
+	SetTimerInterruptVector	  Set the timer interupt vector to a new 
+				  address and specify a new interrupt rate.
+
+
+See DOSCALL.H in the \THEAUDIO\DIGSRC directory for complete details.
+
+_______________________________________________
+6)
+	SOUND BOARD SUPPORT IN THE DIGPAK API
+	-------------------------------------
+
+Sound Driver support of the DigPak API:
+The following table details the level of API support provided by 
+the DigPak sound drivers.
+
+
+	DigPak API Function
+         1   2   3   4   5   6   7   8  DMA  HW Res.     Mfg drvr req'd
+Driver|                                                      Massaging req'd   
+------------------------------------------------------------------------
+IBMSND	 Y   Y   Y   Y   Y   N2. Y   Y   N   6-bit log   N   Y   IBMSND
+IBMBAK	 Y   Y   Y   Y   Y   Y   Y   Y   N   6-bit log   N   Y   IBMBAK
+CVXSND	 Y   Y   Y   Y   Y   Y   Y   Y   N   8-bit       N   N   CVXSND
+VMSND	 Y   Y   Y   Y   Y   Y   Y   Y   N   8-bit       N   N   VMSND
+SMSND	 Y   Y   Y   Y   Y   Y   Y   Y   N   8-bit       N   N   SMSND
+SBLASTER Y   Y   Y   Y   Y   N3. Y   Y   Y   8-bit       N   N   SBLASTER
+ADLIB	 Y   Y   Y   Y   Y   Y   Y   Y   N   6-bit log   N   Y   ADLIB
+TANEXTX	 Y   Y   Y   Y   Y   Y   Y   Y   N   4-bit log   N   Y   TANEXTX
+TANSLTL	 Y   Y   Y   Y   Y   N3. N   N   Y   8-bit       Y   N   TANSLTL
+SOURCE	 Y   Y   Y   Y   Y   Y   Y   Y   N   8-bit       N   N   SOURCE
+DIGISP	 Y   Y   Y   Y   Y   N2. N   N   N   8-bit       Y   Y   DIGISP
+ECHOII	 Y   Y   Y   Y   Y   Y   N   Y   N   8-bit       N   Y   ECHOII
+LANTSND	 Y   Y   Y   Y   Y   N   N   N   N   8-bit       Y   Y   LANTSND
+PAUDIO 	 Y   Y   Y   Y   Y   N   Y   Y   Y   8-bit       Y   N   PAUDIO 
+
+Notes:
+1.  All sound drivers operate in the background except for DIGISP and IBMSND.
+2.  Foreground only drivers cannot support ReportSample.
+3.  ReportSample will be supported for DMA drivers as an approximation good to 
+    1/18 second in the next version.
+4.  Manufacturer drivers are required for TANSLTL, DIGISP, LANTSND, & PAUDIO.
+5.  All DigPak sound drivers play 8-bit raw, digitized sound data.  However,
+    not all sound boards play this 8-bit format.  All DigPak sound drivers
+    "massage" the data on-the-fly.  If the associated PAUSE and destruction
+    of the sound buffer is unacceptable, Function #3 MassageAudio (Preformat
+    audio data into output hardware format) and Function #4 DigPlay2 (Play 
+    preformatted audio data) can be used together to pre-massage and play the
+    audio data.  See the User's Guide for more details.
+6.  The DigPak sound drivers DO NOT play compressed sound files.  Your 
+    application must use UC.ASM to uncompress the sound files prior to playing.
+
+
+DigPak API Functions are repeated here for your convience:
+----------------------------------------------------------
+1 	DigPlay			Play an 8-bit digitized sound
+2 	SoundStatus		Check current status of sound driver
+3 	MassageAudio		Preformat audio data into ouput HW format
+4 	DigPlay2		Play preformatted audio data
+5 	AudioCapabilities	Report capabilities of HW device
+6 	ReportSample		Report current playback address
+7 	SetCallbackAddress	Set a sound completion callback address
+8 	StopSound		Stop playing the current soun
+9	SetAudioCapabilities	Set HW parameters
+10	ReportCallbackAddress	
+
+
+_______________________________________________
+7)
+	DIGPAK VERSION LOG
+	------------------
+
+v1.00  - 10/19/91	First production version of the DigPak sound drivers.
+v1.01  - 10/25/91	Update to fix: Sound drivers not servicing timer INT.
+v1.02  - 10/29/91	Update to fix: Covox drivers for timer INT bug of v1.01.
+			Added LDIGPLAY.ASM & LDIGPLAY.OBJ for large memory model
+v1.03  - 01/07/92	Updated ECHOII.COM, SOURCE.COM, & PAUDIO.COM.
+v1.04  - 01/25/92	Updated all drivers for MidPak compatibility.
+v2.00  - 02/20/92	New release of DIGPAK & DIGPAK PRO.
+
+
+_______________________________________________
+
+End of README.DOC
+
+MIDPAK and DIGPAK are THE Solution for DOS Multimedia!
+
+Thanks for your support!
+THE Audio Solution
