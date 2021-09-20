@@ -9,19 +9,26 @@ The source code to all DigPak sound drivers is in the single file SHELL.ASM.
 It is conditionally assembled to produce all of the many versions of the DigPak
 sound drivers.
 
-You can call me at either:
-			   314-926-0232 to discuss any of the code.
+/*
+** The MIT license:
+**
+** Permission is hereby granted, free of charge, to any person obtaining a copy
+** of this software and associated documentation files (the "Software"), to deal
+** in the Software without restriction, including without limitation the rights
+** to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+** copies of the Software, and to permit persons to whom the Software is furnished
+** to do so, subject to the following conditions:
+**
+** The above copyright notice and this permission notice shall be included in all
+** copies or substantial portions of the Software.
 
-Any changes to this source code MUST be referred back to me.  My CompuServe
-account number is 70235,3237.  My address is: 747 Napa Lane
-					      St. Charles, MO 63304
+** THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+** IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+** FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+** AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+** WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+** CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+*/
 
-BBS # at: 314-939-0200
 
-As per the agreement you should have signed, this source code is to be used
-by The Audio Solution DigPak licensees for maintenence purposes ONLY!
-
-Thanks,
-
-John W. Ratcliff
 
