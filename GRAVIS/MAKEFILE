@@ -1,0 +1,22 @@
+DEBUG = -v
+CC = bcc
+MODEL = t
+INCDIR = ..\gf1tsr
+
+all:  gf166.com
+
+gf166.obj:	shell.asm ultmidi.inc
+	tasm -I$(INCDIR) -zi /m3 /dBUILD=9 shell,gf166
+
+gf166.com:      gf166.obj
+		tlink /s/v gf166 
+		tdstrip -s gf166
+		exe2bin gf166.exe gf166.com
+		erase gf166.exe
+
+clean:
+	del *.obj
+	del *.map
+	del *.tds
+	del *.obj
+	del *.com

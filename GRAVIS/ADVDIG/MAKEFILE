@@ -1,0 +1,19 @@
+CFLAGS=-ml -c 
+LDEBUG= /v
+
+.c.obj:
+	bcc $(CFLAGS) { $*.c }
+
+gf1digi.adv: dmasound.obj ail.inc ail.mac 
+   tlink /m /s /c $(LDEBUG) dmasound,,,
+   exe2bin dmasound.exe gf1digi.adv
+   del dmasound.exe
+
+dmasound.obj: dmasound.asm
+   tasm /l /zi /m /w+ /ml /dSBSTD /I..\gf1tsr dmasound.asm;
+
+clean:
+	del *.obj
+	del *.adv
+	del *.map
+	del *.lst

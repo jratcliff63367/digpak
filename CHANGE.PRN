@@ -1,0 +1,148 @@
+
+Proc	RESET_DSP	near
+       MOV    DX,[_io_addx]
+       ADD    DL,6
+
+;       MOV    AL,1                     ;JCM (GET RID OF THIS CODE)
+;       OUT    DX,AL                    ;JCM
+;       IN     AL,DX                    ;JCM
+;@@RDSP05:                              ;JCM
+;       INC    AL                       ;JCM
+;       JNZ    @@RDSP05                 ;JCM
+;       OUT    DX,AL                    ;JCM
+
+                mov al,1                ;JCM (USE THIS INSTEAD)
+                out dx,al               ;JCM
+                                        ;JCM
+                mov cx,20               ;JCM
+@@wait:         in al,dx                ;JCM  ;wait > 3 uS
+                loop @@wait             ;JCM
+                                        ;JCM
+                mov al,0                ;JCM  ;drop reset
+                out dx,al               ;JCM
+
+       MOV    CL,20H
+
+@@RDSP10:
+       CALL   READ_DSP_TIME
+       CMP    AL,0AAH
+       JE     @@RDSP20
+       DEC    CL
+       JNZ    @@RDSP10
+       MOV    AX,2
+       JMP    SHORT @@RDSP90
+@@RDSP20:
+       SUB    AX,AX
+@@RDSP90:
+       OR     AX,AX
+       RET
+       endp
+
+
+PIC0_val	db	?
+PIC1_val	db	?
+;-------------------------------------------------
+; entry: AL = INTERRUPT NUM                      |
+;        DX = new vector ofs, seg is alway CS    |
+;        BX = offset of store buffer             :
+;-------------------------------------------------
+Proc	SETUP_INTERRUPT near
+       PUSH   BX
+       PUSH   CX
+       PUSH   DX
+
+       CLI
+	xor	ah,ah		; Zero high byte.
+       MOV    CL,AL                    ; preserve interrupt number for use
+       cmp     al,8
+       jb      @@calc_vect
+	add	al,60h	       ; index slcae PIC vectors if IRQ > 7
+@@calc_vect:
+       ADD    AL,8                     ; calculate interrupt vector addx
+       SHL    Ax,1
+       SHL    Ax,1
+       MOV    DI,AX
+
+       PUSH   ES                       ; setup and preserve interrupt
+
+       SUB    AX,AX
+       MOV    ES,AX
+       MOV    AX,[ES:DI]
+       MOV    [cs:BX],AX               ;JCM
+       MOV    [ES:DI],DX
+
+       MOV    AX,[ES:DI+2]
+       MOV    [cs:BX+2],AX             ;JCM
+       MOV    [ES:DI+2],CS
+
+       POP    ES
+
+	mov	bx,1
+	shl	bx,cl
+	not	bx
+	in	al,0a1h
+	mov	[PIC1_val],al
+	and	al,bh
+	out	0a1h,al
+	in	al,21h
+	mov	[PIC0_val],al
+	and	al,bl
+	out	21h,al
+
+       STI
+       POP    DX
+       POP    CX
+       POP    BX
+       RET
+       endp
+
+;-------------------------------------------------
+; entry: AL = INTERRUPT NUM                      |
+;        BX = offset to stored addx              |
+;-------------------------------------------------
+Proc	RESTORE_INTERRUPT	near
+       CLI
+
+       MOV    CL,AL
+
+                push bx                 ;JCM
+	mov	bx,1
+	shl	bx,cl
+	in	al,0a1h
+	or	al,bh
+	and	al,[PIC1_val]	      ;don't kill any interrupts that were
+	out	0a1h,al 	    ;initially active
+	in	al,21h
+	or	al,bl
+	and	al,[PIC0_val]
+	out	21h,al
+                pop bx                  ;JCM
+
+	mov	al,cl		; Get back interrupt number.
+	xor	ah,ah
+
+       cmp	al,8
+       jb	@@calc_vect
+       add	al,60h		; index slave PIC if IRQ > 7
+@@calc_vect:
+       ADD    AL,8                      ; calculate interrupt vector addx
+       SHL    Ax,1
+       SHL    Ax,1
+       MOV    DI,AX
+
+       PUSH   ES                       ; restore interrupt vector
+       SUB    AX,AX
+       MOV    ES,AX
+       MOV    AX,[cs:BX]               ;JCM
+       MOV    [ES:DI],AX
+
+       MOV    AX,[cs:BX+2]             ;JCM
+       MOV    [ES:DI+2],AX
+
+       POP    ES
+
+
+       STI
+       RET
+       endp
+

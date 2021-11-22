@@ -1,0 +1,19 @@
+CFLAGS=-ml -c 
+LDEBUG= /v
+
+.c.obj:
+	bcc $(CFLAGS) { $*.c }
+
+gf1midi.adv: xmidi.obj mt32.inc mpu401.inc ail.inc ail.mac
+   tlink /c /s /m /v xmidi;
+   exe2bin xmidi.exe gf1midi.adv
+   del xmidi.exe
+
+xmidi.obj: xmidi.asm
+   tasm /zi /c /m /w+ /ml /dMT32 /dMPU401 /I..\gf1tsr xmidi.asm;
+
+clean:
+	del *.obj
+	del *.adv
+	del *.map
+	del *.lst

@@ -1,0 +1,19 @@
+DEBUG = -v
+CC = bcc
+MODEL = t
+INCDIR = ..\gf1tsr
+
+all:  gf166.com
+
+gf166.obj:	shell.asm $(INCDIR)\ultmidi.inc
+	tasm -I$(INCDIR) -zi /m3 /dBUILD=9 shell,gf166
+
+gf166.com: gf166.obj
+		tlink /s/v/t gf166,gf166.com;
+
+clean:
+	del *.obj
+	del *.map
+	del *.tds
+	del *.obj
+	del *.com
