@@ -1,0 +1,9 @@
+
+sndsys.com:  start.asm shell.asm soundrv.inc
+	     tasm -zi /m3 shell,sndsys
+	     tasm -zi /m3 start
+	     tlink sndsys + codec + start + wssinit ;
+	     tdstrip -s sndsys
+	     exe2bin sndsys.exe sndsys.com
+	     erase sndsys.exe
+
